@@ -1,3 +1,4 @@
+import tensorflow as tf
 from utils import *
 #import DrugCell
 #from DrugCell import *
@@ -25,6 +26,19 @@ my_model = RestrictedNN(root=root,
                         mod_size_map=term_size_map)
 
 
+print(my_model)
+print(type(my_model))
+print(my_model.inputs)
+print(my_model.outputs)
+
+model = tf.keras.Model(inputs=my_model.inputs, outputs=my_model.outputs)
+
+model.compile(loss='mean_squared_error', optimizer = "adam")
+model.summary()
+
+raise
+
+raise
 
 #plot_model(my_model, to_file = "functional_nn.png")
 #img = plt.imread("functional_nn.png")

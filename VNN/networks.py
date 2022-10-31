@@ -107,8 +107,11 @@ class RestrictedNN():
         # Construct the layers between modules.
         self.build_module_layers(self.dG)
 
+        # Forward pass
+        self.forward()
 
-        self.forward()    
+
+            
          
 
     def get_module_dimensions(self, mod_size_map):
@@ -129,7 +132,7 @@ class RestrictedNN():
         """ Construct the input layer for genotype data."""
         
         self.gene_layers = {}
-        inputs = Input(shape=(self.n_inp,))
+        self.inputs = Input(shape=(self.n_inp,))
         
         
         # Iterate through the modules that are directly mapped to the input.
@@ -213,7 +216,7 @@ class RestrictedNN():
         #X = np.array([[2, 2, 2, 2],
         #              [1, 1, 1, 1]])
         
-        X = np.array([[2, 2, 2, 2]]).astype("float64")
+        #X = np.array([[2, 2, 2, 2]]).astype("float64")
 
 
         # Initialize a dictionary to store output from the first module 
@@ -229,16 +232,16 @@ class RestrictedNN():
 
             # Store the output of each of the directly-mapped module layers as 
             # a separate tensor in a dictionary.
-            inp_mod_output[mod] = (layer)(X) 
+            #inp_mod_output[mod] = (layer)(X) 
+            inp_mod_output[mod] = (layer)(self.inputs) 
             
+
+
         mod_output_map = {}
         for i, layer in enumerate(self.mod_layer_list):
-            print(i)
-            print(layer)
             for mod in layer:
                 child_input_list = []
                 
-                print(mod)
                 # If the module is directly mapped to other modules, include 
                 # the output of the child module in the parent module's input
                 # vector.
@@ -265,7 +268,7 @@ class RestrictedNN():
                 mod_output_map[mod] = mod_output
         
 
-        print(mod_output_map["GO:output"])
+        self.outputs = mod_output_map["GO:output"]
 
 
             
