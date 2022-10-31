@@ -1,8 +1,57 @@
+
 import sys
+import numpy as np
 import networkx as nx
 import networkx.algorithms.components.connected as nxacc
 import networkx.algorithms.dag as nxadag
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+
+
+
+
+
+def generate_data(input_size, input_dim, noise, lower, upper):
+    """ Create the Input and output """
+
+    X = np.zeros(shape = (input_size, input_dim))
+    y = np.zeros(shape = (input_size, 1))
+
+    for i in range(0, input_size):
+        
+        input_list = np.random.uniform(lower, upper, size = input_dim)
+        
+        output = input_list[0] * input_list[1] + input_list[2] + input_list[3] 
+
+        #+ 3 * input_list[2]\
+                 #+ np.random.normal(0, 2*abs(input_list[0]), 1)
+
+        
+        X[i] = input_list
+        y[i] = output
+
+    X_train, X_test, y_train, y_test = train_test_split(X, 
+                                                        y, 
+                                                        test_size = 0.2,
+                                                        random_state = 42)
+
+    return X_train, X_test, y_train, y_test
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def load_mapping(mapping_file):

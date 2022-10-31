@@ -77,7 +77,7 @@ class RestrictedLayer(Dense):
 
 
 
-class RestrictedNN():
+class RestrictedNN(tf.keras.Model):
     """ Creates a neural network where connections between modules can be 
     specified."""
     
@@ -108,7 +108,7 @@ class RestrictedNN():
         self.build_module_layers(self.dG)
 
         # Forward pass
-        self.forward()
+        #self.forward()
 
 
             
@@ -132,7 +132,7 @@ class RestrictedNN():
         """ Construct the input layer for genotype data."""
         
         self.gene_layers = {}
-        self.inputs = Input(shape=(self.n_inp,))
+        #self.inputs = Input(shape=(self.n_inp,))
         
         
         # Iterate through the modules that are directly mapped to the input.
@@ -198,21 +198,23 @@ class RestrictedNN():
                 if mod in self.term_direct_gene_map:
                         input_size += len(self.term_direct_gene_map[mod])
                 
-
+                
+                mod_name = mod.replace(":", "_")
                 # term_hidden is the number of the hidden variables in each state
                 mod_hidden = self.module_dimensions[mod]            
                 
                 # Add a layer for each module.
                 self.module_layers[mod] = Dense(
                         mod_hidden, input_shape=(input_size,),
-                        activation="linear")
+                        activation="linear", 
+                        name = mod_name)
 
             dG.remove_nodes_from(leaves)
                  
 
 
 
-    def forward(self):
+    def call(self, inputs):
         #X = np.array([[2, 2, 2, 2],
         #              [1, 1, 1, 1]])
         
@@ -233,7 +235,7 @@ class RestrictedNN():
             # Store the output of each of the directly-mapped module layers as 
             # a separate tensor in a dictionary.
             #inp_mod_output[mod] = (layer)(X) 
-            inp_mod_output[mod] = (layer)(self.inputs) 
+            inp_mod_output[mod] = (layer)(inputs) 
             
 
 
@@ -268,7 +270,7 @@ class RestrictedNN():
                 mod_output_map[mod] = mod_output
         
 
-        self.outputs = mod_output_map["GO:output"]
+        return(mod_output_map["GO:output"])
 
 
             
