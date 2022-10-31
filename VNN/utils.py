@@ -115,6 +115,16 @@ def load_ontology(file_name, gene2id_mapping):
 
 
 
+
+
+
+
+
+
+
+
+
+
 #gene2id_mapping = load_mapping("gene2ind.txt")
 #gene2id_mapping = load_mapping("geneID_test.txt")
 

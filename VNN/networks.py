@@ -23,7 +23,64 @@ from keras.layers import Input
 
 
 
+
+
+
+
+
+
+class RestrictedLayer(Dense):
+    """ Build a layer where a specific connections matrix can be applied.  """
+    
+    def __init__(self, units, connections, **kwargs):
+        
+        # This refers to the matrix of 1's and 0's that specify the connections
+        self.connections = connections
+        super().__init__(units, **kwargs)
+
+        
+    def call(self, inputs):
+        """ Dense implements the operation: output = activation(dot(input,
+        kernel) + bias)"""
+        
+        # Multiply the weights (kernel) element-wise with the connections
+        # matrix. Then take the dot product of the input with the
+        # weighted connections.
+        output = K.dot(inputs, self.kernel * self.connections)
+        
+        # If the bias is to be included, add it with the output of the previous
+        # step.
+        if self.use_bias:
+            output = K.bias_add(output, self.bias)
+        
+        # Apply the activation function.
+        if self.activation is None:
+            raise ValueError("Activation required")
+        output = self.activation(output)
+        
+        # Return the ouput of the layer.
+        return output
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class RestrictedNN():
+    """ Creates a neural network where connections between modules can be 
+    specified."""
+    
     def __init__(self, 
                  root, 
                  dG, 
@@ -74,16 +131,31 @@ class RestrictedNN():
         self.gene_layers = {}
         inputs = Input(shape=(self.n_inp,))
         
+        
         # Iterate through the modules that are directly mapped to the input.
-        for module, input_set in self.term_direct_gene_map.items():
+        
 
-            
-            self.gene_layers[module] = (Dense(
+        for module, input_set in self.term_direct_gene_map.items():
+            connections = np.zeros( (self.n_inp, len(input_set)) )
+            j = 0
+            for i in input_set:
+                connections[i][j] = 1
+                j+=1
+
+
+
+            self.gene_layers[module] = (RestrictedLayer(
                     len(input_set),
+                    connections,
                     input_shape=(self.n_inp,),
                     activation="linear"))
 
     
+
+
+
+
+
     def build_module_layers(self, dG):
         
         self.module_layers = {}
@@ -138,9 +210,12 @@ class RestrictedNN():
 
 
     def forward(self):
-        X = np.array([[2, 2, 2, 2],
-                      [1, 1, 1, 1]])
+        #X = np.array([[2, 2, 2, 2],
+        #              [1, 1, 1, 1]])
         
+        X = np.array([[2, 2, 2, 2]]).astype("float64")
+
+
         # Initialize a dictionary to store output from the first module 
         # layer where input is mapped directly to the module.
         inp_mod_output = {}
