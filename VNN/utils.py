@@ -116,15 +116,11 @@ def load_ontology(file_name, gene2id_mapping):
 
 
 #gene2id_mapping = load_mapping("gene2ind.txt")
-gene2id_mapping = load_mapping("geneID_test.txt")
+#gene2id_mapping = load_mapping("geneID_test.txt")
 
 
 #dG, leaves, term_size_map, term_direct_gene_map = load_ontology("drugcell_ont.txt", gene2id_mapping)
-dG, root, term_size_map, term_direct_gene_map = load_ontology("ontology_test.txt", gene2id_mapping)
-
-print(dG)
-print(term_size_map)
-print(root)
+#dG, root, term_size_map, term_direct_gene_map = load_ontology("ontology_test.txt", gene2id_mapping)
 
 
 
