@@ -146,12 +146,13 @@ class RestrictedNN(tf.keras.Model):
                 j+=1
 
 
-
+            mod_name = f"{module.replace(':', '_')}_genes"
             self.gene_layers[module] = (RestrictedLayer(
                     len(input_set),
                     connections,
                     input_shape=(self.n_inp,),
-                    activation="linear"))
+                    activation="linear", 
+                    name = mod_name))
 
     
 
@@ -206,7 +207,7 @@ class RestrictedNN(tf.keras.Model):
                 # Add a layer for each module.
                 self.module_layers[mod] = Dense(
                         mod_hidden, input_shape=(input_size,),
-                        activation="linear", 
+                        activation="sigmoid", 
                         name = mod_name)
 
             dG.remove_nodes_from(leaves)
@@ -266,8 +267,9 @@ class RestrictedNN(tf.keras.Model):
                 # Apply the sigmoid function on the weighted input to the module 
                 # neuron. Add the output to a dictionary mapping the term to
                 # it's post-activation output.
-                mod_output = tf.math.sigmoid(mod_weighted_input)
-                mod_output_map[mod] = mod_output
+                
+                #mod_output = tf.math.sigmoid(mod_weighted_input)
+                mod_output_map[mod] = mod_weighted_input
         
 
         return(mod_output_map["GO:output"])

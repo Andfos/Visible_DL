@@ -1,5 +1,5 @@
-
 import sys
+from math import *
 import numpy as np
 import networkx as nx
 import networkx.algorithms.components.connected as nxacc
@@ -9,33 +9,51 @@ from sklearn.model_selection import train_test_split
 
 
 
+# Functions allowed for data generation.
+math_funcs = {"abs":abs, "sqrt":sqrt, "log":log, "log10":log10, "exp":exp} 
 
 
-def generate_data(input_size, input_dim, noise, lower, upper):
-    """ Create the Input and output """
+def generate_data(function,
+                  noise_sd_func = 0,
+                  data_size = 100, 
+                  input_dim = 1,
+                  lower = -10, 
+                  upper = 10):
+    
+    """ Manually generate the input and output data for testing functionality 
+    of the neural network.."""
 
-    X = np.zeros(shape = (input_size, input_dim))
-    y = np.zeros(shape = (input_size, 1))
 
-    for i in range(0, input_size):
-        
+    X = np.zeros(shape = (data_size, input_dim))
+    y = np.zeros(shape = (data_size, 1))
+
+    # Iterate for the desired data size to produce X and y vectors.
+    for i in range(0, data_size):
         input_list = np.random.uniform(lower, upper, size = input_dim)
         
-        output = input_list[0] * input_list[1] + input_list[2] + input_list[3] 
 
-        #+ 3 * input_list[2]\
-                 #+ np.random.normal(0, 2*abs(input_list[0]), 1)
+        try:
+            # Generate output according to the user-specified function.
+            math_funcs["x"] = input_list
+            output = eval(function,{"__builtins__":None}, math_funcs)
+            
+            # Add in the noise generated from the specified noise standard
+            # deviation.
+            noise_sd = eval(noise_sd_func,{"__builtins__":None}, math_funcs)
+            noise = np.random.normal(0, noise_sd, 1)
+            output += noise
+            
+        except IndexError:
+            print("Ensure that the input_dim matches the dimensions of the "
+                  "function.")
+            sys.exit()
 
-        
+                
         X[i] = input_list
         y[i] = output
 
-    X_train, X_test, y_train, y_test = train_test_split(X, 
-                                                        y, 
-                                                        test_size = 0.2,
-                                                        random_state = 42)
 
-    return X_train, X_test, y_train, y_test
+    return X, y
 
 
 
@@ -205,6 +223,10 @@ def build_input_vector(row_data, num_col, original_features):
         cuda_features.data[i] = original_features.data[data_ind]
    
     return cuda_features
+
+
+
+
 
 
 
