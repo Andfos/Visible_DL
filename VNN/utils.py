@@ -19,11 +19,10 @@ def generate_data(function,
                   input_dim = 1,
                   lower = -10, 
                   upper = 10):
-    
-    """ Manually generate the input and output data for testing functionality 
-    of the neural network.."""
-
-
+    """ 
+    Manually generate the input and output data according to user-specified 
+    functions..
+    """
     X = np.zeros(shape = (data_size, input_dim))
     y = np.zeros(shape = (data_size, 1))
 
@@ -62,16 +61,6 @@ def generate_data(function,
 
 
 
-
-
-
-
-
-
-
-
-
-
 def load_mapping(mapping_file):
 
     mapping = {}
@@ -91,81 +80,84 @@ def load_mapping(mapping_file):
 
 
 
-def load_ontology(file_name, gene2id_mapping):
-    
+def load_ontology(file_name, input_id_map):
+    """
+    Load the ontology file and return a directed acyclic graph to represent
+    it.
+    """
+
     # Initialize an empty directed graph and sets
-    dG = nx.DiGraph()
-    term_direct_gene_map = {}
-    term_size_map = {}
+    G = nx.DiGraph()
+    module_direct_input_map = {}
+    module_size_map = {}
 
-    # Open the file containing the ontology
+    
     file_handle = open(file_name)
+    input_set = set()
 
-    # Add genes to the a set
-    gene_set = set()
-
+    # Iterate through the ontology file.
     for line in file_handle:
         line = line.rstrip().split()
+        parent = line[0]
+        child = line[1]
+        relation = line[2]
+
+        # If mapping between two modules, add to directed graph.
+        if relation == 'default':
+            G.add_edge(parent, child)
         
-        # If the line is a mapping between GO terms, add to directed graph.
-        if line[2] == 'default':
-            dG.add_edge(line[0], line[1])
-        
-        # If the gene is not in the gene mappings, skip it.
+        # If the input is not in the input IDs, skip it.
         else:
-            if line[1] not in gene2id_mapping:
+            if child not in input_id_map:
                 continue
             
-            # If the gene has not yet been mapped to a GO term,
-            # add the gene to the term mapping.
-            if line[0] not in term_direct_gene_map:
-                term_direct_gene_map[ line[0] ] = set()
+            # If the module is mapped directly to inputs, instantiate a new 
+            # set to record its inputs.
+            if parent not in module_direct_input_map:
+                module_direct_input_map[parent] = set()
 
-            # Add the mapping between the GO term and the index of the gene.
-            term_direct_gene_map[line[0]].add(gene2id_mapping[line[1]])
+            # Add the id of the input to the module that it is mapped to.
+            module_direct_input_map[parent].add(input_id_map[child])
             
-            # Add the gene to the set of genes.
-            gene_set.add(line[1])
+            # Add the input to the set of all inputs.
+            input_set.add(child)
 
 
     file_handle.close()
-    print('There are %d genes' % len(gene_set))
+    n_inp = len(input_set)
 
-    # Iterate through the GO terms in the directed graph.
-    for term in dG.nodes():
-        term_gene_set = set()
+    # Iterate through the modules in the directed graph.
+    for module in G.nodes():
+        module_input_set = set()
 
-        # If the GO term has a direct mapping to a gene, 
-        # add the gene to the GO term's gene set.
-        if term in term_direct_gene_map:
-            term_gene_set = term_direct_gene_map[term]
+        # If the module has a direct mapping to an input, 
+        # add the input to the module's input set.
+        if module in module_direct_input_map:
+            module_input_set = module_direct_input_map[module]
         
-        # Get a list of the descendants of the GO term.
-        deslist = nxadag.descendants(dG, term)
+        # Get a list of the descendants of the module.
+        deslist = nxadag.descendants(G, module)
 
-        # Iterate through the descendents of the term.
-        for child in deslist:                         
+        # Iterate through the descendents of the module.
+        for des in deslist:                         
             
             # Add any genes that are annotated to the child to the parents
             # gene set.
-            if child in term_direct_gene_map:
-                term_gene_set = term_gene_set | term_direct_gene_map[child]
+            if des in module_direct_input_map:
+                module_input_set = module_input_set | module_direct_input_map[des]
         
         # If any of the terms have no genes in their set, break.
-        if len(term_gene_set) == 0:
-            print('There is empty terms, please delete term: %s' % term)
+        if len(module_input_set) == 0:
+            print("Module {module} is empty. Please delete it.")
             sys.exit(1)
         else:
-            term_size_map[term] = len(term_gene_set)
+            module_size_map[module] = len(module_input_set)
 
-    leaves = [n for n,d in dG.in_degree() if d==0]
+    leaves = [n for n,d in G.in_degree() if d==0]
 
-    uG = dG.to_undirected()
+    uG = G.to_undirected()
     connected_subG_list = list(nxacc.connected_components(uG))
 
-    print('There are %d roots: %s' % (len(leaves), leaves[0]))
-    print('There are %d terms' % len(dG.nodes()))
-    print('There are %d connected components' % len(connected_subG_list))
 
     if len(leaves) > 1:
         print('There are more than 1 root of ontology. Please use only one root.')
@@ -174,7 +166,7 @@ def load_ontology(file_name, gene2id_mapping):
         print('There are more than connected components. Please connect them.')
         sys.exit(1)
 
-    return dG, leaves[0], term_size_map, term_direct_gene_map
+    return G, leaves[0], module_size_map, module_direct_input_map
 
 
 

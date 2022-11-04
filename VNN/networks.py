@@ -35,10 +35,10 @@ class RestrictedLayer(Dense):
     def __init__(self, units, connections, **kwargs):
         
         # This refers to the matrix of 1's and 0's that specify the connections
-        self.connections = connections
         super().__init__(units, **kwargs)
+        self.connections = connections
 
-        
+
     def call(self, inputs):
         """ Dense implements the operation: output = activation(dot(input,
         kernel) + bias)"""
@@ -46,8 +46,10 @@ class RestrictedLayer(Dense):
         # Multiply the weights (kernel) element-wise with the connections
         # matrix. Then take the dot product of the input with the
         # weighted connections.
+
         output = K.dot(inputs, self.kernel * self.connections)
-        
+                
+
         # If the bias is to be included, add it with the output of the previous
         # step.
         if self.use_bias:
@@ -87,7 +89,8 @@ class RestrictedNN(tf.keras.Model):
                  module_neurons, 
                  n_inp, 
                  term_direct_gene_map,
-                 mod_size_map):
+                 mod_size_map, 
+                 initializer):
         
         super(RestrictedNN, self).__init__()
 
@@ -97,8 +100,8 @@ class RestrictedNN(tf.keras.Model):
         self.module_neurons = module_neurons
         self.term_direct_gene_map = term_direct_gene_map
         #self.layers = layers
-        self.dG = dG
-       
+        self.dG = dG       
+        self.initializer = initializer
 
         self.get_module_dimensions(mod_size_map)
         # Construct the input layer.
@@ -106,10 +109,16 @@ class RestrictedNN(tf.keras.Model):
         
         # Construct the layers between modules.
         self.build_module_layers(self.dG)
+        
+        self.final_layer = Dense(1, input_shape=(1,), 
+                            activation="linear",
+                            use_bias=False)
+        
+
 
         # Forward pass
-        #self.forward()
-
+        #X = np.array([[0.4, 0.2, 0.3]])
+        #self.call(X)
 
             
          
@@ -148,11 +157,14 @@ class RestrictedNN(tf.keras.Model):
 
             mod_name = f"{module.replace(':', '_')}_genes"
             self.gene_layers[module] = (RestrictedLayer(
-                    len(input_set),
-                    connections,
+                    units=len(input_set),
+                    connections=connections,
                     input_shape=(self.n_inp,),
-                    activation="linear", 
-                    name = mod_name))
+                    activation="linear",
+                    use_bias=True,
+                    name=mod_name,
+                    kernel_initializer=self.initializer, 
+                    trainable=False))
 
     
 
@@ -208,7 +220,9 @@ class RestrictedNN(tf.keras.Model):
                 self.module_layers[mod] = Dense(
                         mod_hidden, input_shape=(input_size,),
                         activation="sigmoid", 
-                        name = mod_name)
+                        name=mod_name, 
+                        use_bias=False, 
+                        kernel_initializer=self.initializer)
 
             dG.remove_nodes_from(leaves)
                  
@@ -220,7 +234,6 @@ class RestrictedNN(tf.keras.Model):
         #              [1, 1, 1, 1]])
         
         #X = np.array([[2, 2, 2, 2]]).astype("float64")
-
 
         # Initialize a dictionary to store output from the first module 
         # layer where input is mapped directly to the module.
@@ -235,31 +248,36 @@ class RestrictedNN(tf.keras.Model):
 
             # Store the output of each of the directly-mapped module layers as 
             # a separate tensor in a dictionary.
-            #inp_mod_output[mod] = (layer)(X) 
             inp_mod_output[mod] = (layer)(inputs) 
-            
+            #print(f"Module {mod}")
+            #print(inp_mod_output[mod])
 
-
+        
         mod_output_map = {}
         for i, layer in enumerate(self.mod_layer_list):
             for mod in layer:
                 child_input_list = []
-                
                 # If the module is directly mapped to other modules, include 
                 # the output of the child module in the parent module's input
                 # vector.
                 for child_mod in self.mod_neighbor_map[mod]:
                     child_input_list.append(mod_output_map[child_mod])
                 
+
                 # If the module is directly mapped to the input, include the 
                 # output of the first layer in the module's input vector.
                 if mod in self.term_direct_gene_map:
                     child_input_list.append(inp_mod_output[mod])
-
+                
                 # Concatenate all of the inputs from child modules together 
                 # along the same dimension.
                 child_input = tf.concat(child_input_list, 1)
-                
+
+                #print(f"Module {mod}")
+                #print("Child input")
+                #print(child_input)
+                #print("\n")
+
                 # Pass the input to the module's layer.
                 layer = self.module_layers[mod]
                 mod_weighted_input = (layer)(child_input) 
@@ -272,7 +290,10 @@ class RestrictedNN(tf.keras.Model):
                 mod_output_map[mod] = mod_weighted_input
         
 
-        return(mod_output_map["GO:output"])
+        final_output = (self.final_layer)(mod_output_map["GO:output"])
+
+
+        return(final_output)
 
 
             
