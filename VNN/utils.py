@@ -58,6 +58,16 @@ def generate_data(function,
 
 
 
+def set_module_neurons(n, dynamic_neurons_func):
+    """ Retrieve the number of neurons for a given module. 
+
+    This function allows the user to specify the number of neurons a module 
+    will contain as a function of the number of its inputs.
+    """
+    math_funcs["n"] = n
+    mod_neurons = eval(dynamic_neurons_func, {"__builtins__":None}, math_funcs)
+    return(mod_neurons)
+
 
 
 

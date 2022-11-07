@@ -1,7 +1,7 @@
 import tensorflow as tf
 import keras.layers
 from tensorflow import keras
-
+from tensorflow.keras import initializers
 import numpy as np
 import keras.backend as K
 from tensorflow.keras import layers
@@ -15,7 +15,7 @@ from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras import initializers
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import Model
-
+from utils import set_module_neurons
 
 
 
@@ -38,7 +38,6 @@ class RestrictedLayer(Dense):
         super().__init__(units, **kwargs)
         self.connections = connections
 
-
     def call(self, inputs):
         """ Dense implements the operation: output = activation(dot(input,
         kernel) + bias)"""
@@ -46,9 +45,7 @@ class RestrictedLayer(Dense):
         # Multiply the weights (kernel) element-wise with the connections
         # matrix. Then take the dot product of the input with the
         # weighted connections.
-
         output = K.dot(inputs, self.kernel * self.connections)
-                
 
         # If the bias is to be included, add it with the output of the previous
         # step.
@@ -86,7 +83,7 @@ class RestrictedNN(tf.keras.Model):
     def __init__(self, 
                  root, 
                  dG, 
-                 module_neurons, 
+                 module_neurons_func, 
                  n_inp, 
                  term_direct_gene_map,
                  mod_size_map, 
@@ -97,83 +94,119 @@ class RestrictedNN(tf.keras.Model):
         
         self.root = root
         self.n_inp = n_inp
-        self.module_neurons = module_neurons
+        self.module_neurons_func = module_neurons_func
         self.term_direct_gene_map = term_direct_gene_map
         #self.layers = layers
         self.dG = dG       
         self.initializer = initializer
 
         self.get_module_dimensions(mod_size_map)
+        
         # Construct the input layer.
         self.build_input_layer()
         
         # Construct the layers between modules.
         self.build_module_layers(self.dG)
         
-        self.final_layer = Dense(1, input_shape=(1,), 
-                            activation="linear",
-                            use_bias=False)
-        
 
 
-        # Forward pass
-        #X = np.array([[0.4, 0.2, 0.3]])
-        #self.call(X)
-
-            
-         
 
     def get_module_dimensions(self, mod_size_map):
-        """Retrieve the mapping of neurons to modules."""
+        """Retrieve the number of neurons allocated to  each  module layers.
+         
+        The number of neurons in each module layer is passed in as function.
+        It can be static, where each module layer gets the same number of 
+        inputs, or it can be dynamic, where the number of neurons is a 
+        function of the number of inputs to the layer.
+        """
+        
         self.module_dimensions = {}
-       
+        self.module_children_num = {}
+        # Iterate through the modules of the ontology.
+        
+        print("Module\tModule_size\tModule_direct_children\tNeurons")
         for mod, mod_size in mod_size_map.items():
-            num_output = int(self.module_neurons)
             
-            print(f"Module\t{mod}\tMod_size\t{mod_size}\tNeurons\t{num_output}")
-            self.module_dimensions[mod] = num_output
+            # Set the number of neurons in each module layer according to the 
+            #module_neurons_func.
+            n = 0
+            if mod == self.root:
+                n = 1
+                num_children = len(self.dG[mod])
+            elif mod in self.term_direct_gene_map:
+                n += len(self.term_direct_gene_map[mod])
+                num_children = n
+            else:
+                n += len(self.dG[mod])
+                num_children = n
+            
+     
+            num_neurons = set_module_neurons(n, self.module_neurons_func)
+            self.module_children_num[mod] =  num_children 
+            self.module_dimensions[mod] = num_neurons
 
+            print(f"{mod}\t{mod_size}\t{num_children}\t{num_neurons}")
 
 
 
 
     def build_input_layer(self):
-        """ Construct the input layer for genotype data."""
+        """ Construct the input layer for each input-connected module.
+
+        The name of the input layer follows the form <module_name>_inp. The
+        layer is passed the entire vector of inputs, and it returns only the 
+        inputs that belong to the specified module. There are as many neurons 
+        in the layer as there are inputs to the module, with the output of 
+        each neuron representing an exact mapping to exactly one input. 
+        For instance, if module1 takes input from inp1 and inp2, the input 
+        layer will be named module1_inp, it will have 2 neuons, and the output 
+        of neuron 1 will equal the value of input 1, and the output of neuron 2 
+        will equal the value of input 2. The weights are initialized to 1 and
+        are untrainable, and the activation is linear.
+        """
         
+        # Initialize a dictionary to keep track of input layers for each 
+        # module.
         self.gene_layers = {}
-        #self.inputs = Input(shape=(self.n_inp,))
-        
         
         # Iterate through the modules that are directly mapped to the input.
-        
-
         for module, input_set in self.term_direct_gene_map.items():
+            input_set = sorted(list(input_set))
+            
+            # Construct the connections matrix.
             connections = np.zeros( (self.n_inp, len(input_set)) )
             j = 0
             for i in input_set:
                 connections[i][j] = 1
                 j+=1
-
-
-            mod_name = f"{module.replace(':', '_')}_genes"
+            
+            # Create a restriced layer with untrainable weights initialized 
+            # to 1 and a linear activation.
+            mod_name = f"{module.replace(':', '_')}_inp"
             self.gene_layers[module] = (RestrictedLayer(
                     units=len(input_set),
                     connections=connections,
                     input_shape=(self.n_inp,),
                     activation="linear",
-                    use_bias=True,
-                    name=mod_name,
-                    kernel_initializer=self.initializer, 
-                    trainable=False))
-
-    
-
+                use_bias=False,
+                name=mod_name,
+                kernel_initializer=initializers.Ones(), 
+                trainable=False))
 
 
 
 
     def build_module_layers(self, dG):
-        
+        """ Construct the layers for each module in the ontology.
+
+        The module layer takes in a tensor output from a module_inp layer if 
+        it is directly mapped to inputs, or it takes in a tensor that is
+        created by concatenating the tensors output from all of the module's 
+        child modules. By default, the sigmoid activation is applied and a bias 
+        term is included. 
+        """
+
+        # Initialize a dictionary to store the layers of the modules.
         self.module_layers = {}
         self.mod_layer_list = []   # term_layer_list stores the built neural network 
         self.mod_neighbor_map = {}
@@ -192,7 +225,7 @@ class RestrictedNN(tf.keras.Model):
         while True:
             leaves = [n for n,d in dG.out_degree() if d==0]
 
-
+           
             if len(leaves) == 0:
                 break
 
@@ -200,9 +233,13 @@ class RestrictedNN(tf.keras.Model):
 
             self.mod_layer_list.append(leaves)
             
+
             for mod in leaves:
                 
-                # input size will be #chilren + #genes directly annotated by the term
+                # Input size will be the number of children plus the number of 
+                # inputs directly mapped to the module.
+                #input_size = 0
+                #input_size = self.module_children_num[mod]
                 input_size = 0
                 
                 for child in self.mod_neighbor_map[mod]:
@@ -213,20 +250,29 @@ class RestrictedNN(tf.keras.Model):
                 
                 
                 mod_name = mod.replace(":", "_")
-                # term_hidden is the number of the hidden variables in each state
                 mod_hidden = self.module_dimensions[mod]            
                 
                 # Add a layer for each module.
-                self.module_layers[mod] = Dense(
-                        mod_hidden, input_shape=(input_size,),
-                        activation="sigmoid", 
-                        name=mod_name, 
-                        use_bias=False, 
-                        kernel_initializer=self.initializer)
+                #with self.name_scope:
+                
+                if mod == self.root:
+                    self.module_layers[mod] = Dense(
+                            1, input_shape=(input_size,),
+                            activation="linear", 
+                            name=mod_name, 
+                            use_bias=True, 
+                            kernel_initializer=self.initializer)
+                else:
+                    self.module_layers[mod] = Dense(
+                            self.module_dimensions[mod], 
+                            input_shape=(input_size,),
+                            activation="sigmoid", 
+                            name=mod_name, 
+                            use_bias=True, 
+                            kernel_initializer=self.initializer)
 
             dG.remove_nodes_from(leaves)
                  
-
 
 
     def call(self, inputs):
@@ -245,10 +291,12 @@ class RestrictedNN(tf.keras.Model):
             # Pass the entire input vector into the directly-mapped module 
             #layer.
             layer = self.gene_layers[mod]
-
+            print(mod)
+            print(layer)
             # Store the output of each of the directly-mapped module layers as 
             # a separate tensor in a dictionary.
-            inp_mod_output[mod] = (layer)(inputs) 
+            inp_mod_output[mod] = layer(inputs) 
+
             #print(f"Module {mod}")
             #print(inp_mod_output[mod])
 
@@ -280,7 +328,7 @@ class RestrictedNN(tf.keras.Model):
 
                 # Pass the input to the module's layer.
                 layer = self.module_layers[mod]
-                mod_weighted_input = (layer)(child_input) 
+                mod_weighted_input = layer(child_input) 
                 
                 # Apply the sigmoid function on the weighted input to the module 
                 # neuron. Add the output to a dictionary mapping the term to
@@ -290,10 +338,10 @@ class RestrictedNN(tf.keras.Model):
                 mod_output_map[mod] = mod_weighted_input
         
 
-        final_output = (self.final_layer)(mod_output_map["GO:output"])
+        #(mod_output_map["GO:output"])
 
 
-        return(final_output)
+        return(mod_output_map[self.root])
 
 
             
@@ -305,6 +353,18 @@ class RestrictedNN(tf.keras.Model):
 
 
 
-
+class MLP(tf.Module):
+  def __init__(self, input_size, sizes, name=None):
+    super(MLP, self).__init__(name=name)
+    self.layers = []
+    with self.name_scope:
+      for size in sizes:
+        self.layers.append(Dense(input_dim=input_size, output_size=size))
+        input_size = size
+  @tf.Module.with_name_scope
+  def __call__(self, x):
+    for layer in self.layers:
+      x = layer(x)
+    return x
 
 

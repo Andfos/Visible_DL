@@ -6,7 +6,7 @@ import numpy as np
 from utils import *
 #import DrugCell
 #from DrugCell import *
-from networks import RestrictedNN
+from networks import RestrictedNN, MLP
 from tensorflow.keras.utils import plot_model
 from packaging import version
 import tensorboard
@@ -23,13 +23,18 @@ lower = -10
 upper = 10
 test_size = 0.20
 
-# Set neural network parameters
-batch_size = 16
-epochs = 5000
-term_neurons = 4
-ngene = 3
-initializer = initializers.Ones()
 
+
+# Set neural network parameters
+term_neurons_func = "n**2"
+
+
+
+batch_size = 16
+epochs = 10000
+ngene = 3
+#initializer = initializers.Ones()
+initializer = initializers.GlorotUniform()
 
 
 ### Load Data ###
@@ -55,16 +60,28 @@ gene2id_mapping = load_mapping("Data/geneID_test.txt")
 dG, root, term_size_map, term_direct_gene_map = load_ontology("Data/onto_test2terms.txt", gene2id_mapping)
 
 
-
 # Load the VNN
 res_nn = RestrictedNN(
         root=root, 
         dG=dG, 
-        module_neurons=term_neurons, 
+        module_neurons_func=term_neurons_func, 
         n_inp=ngene, 
         term_direct_gene_map=term_direct_gene_map,
         mod_size_map=term_size_map, 
-        initializer=initializer)
+        initializer=initializer) 
+
+print(res_nn)
+#print(res_nn.variables)
+#print(res_nn.name_scope)
+#print(res_nn.submodules)
+
+
+"""
+module = MLP(input_size=5, sizes=[5, 5])
+print(module.variables)
+raise
+"""
+
 
 res_nn.compile(loss='mean_squared_error', optimizer = "adam")
 res_nn.build(input_shape = (batch_size, ngene))
