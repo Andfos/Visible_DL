@@ -191,7 +191,7 @@ class RestrictedNN(tf.keras.Model):
                 use_bias=False,
                 name=mod_name,
                 kernel_initializer=initializers.Ones(), 
-                trainable=False))
+                trainable=True))
 
 
 
@@ -236,6 +236,7 @@ class RestrictedNN(tf.keras.Model):
 
             for mod in leaves:
                 
+                mod_name = mod.replace(":", "_")
                 # Input size will be the number of children plus the number of 
                 # inputs directly mapped to the module.
                 #input_size = 0
@@ -245,11 +246,12 @@ class RestrictedNN(tf.keras.Model):
                 for child in self.mod_neighbor_map[mod]:
                     input_size += self.module_dimensions[child]
             
+                # If the module is directly mapped to inputs, make sure the 
+                # layer name reflects this for later use.
                 if mod in self.term_direct_gene_map:
                         input_size += len(self.term_direct_gene_map[mod])
+                        mod_name = mod_name + "_direct"
                 
-                
-                mod_name = mod.replace(":", "_")
                 mod_hidden = self.module_dimensions[mod]            
                 
                 # Add a layer for each module.

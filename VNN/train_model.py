@@ -10,7 +10,7 @@ from networks import RestrictedNN, MLP
 from tensorflow.keras.utils import plot_model
 from packaging import version
 import tensorboard
-
+from penalties import *
 
 
 ### Set Parameters ###
@@ -27,11 +27,12 @@ test_size = 0.20
 
 # Set neural network parameters
 term_neurons_func = "n**2"
-
+regl0 = 0.02
+lr = 1
 
 
 batch_size = 16
-epochs = 10000
+epochs = 100
 ngene = 3
 #initializer = initializers.Ones()
 initializer = initializers.GlorotUniform()
@@ -86,6 +87,77 @@ raise
 res_nn.compile(loss='mean_squared_error', optimizer = "adam")
 res_nn.build(input_shape = (batch_size, ngene))
 res_nn.summary()
+
+
+
+
+
+for epoch in range(1, epochs):
+    print(f"Epoch {epoch}")
+    
+    # calculate the loss over the training set.
+    with tf.GradientTape() as t:
+
+        train_preds = res_nn(X_train)
+        loss_fn = tf.keras.losses.mean_squared_error
+        loss_fn = tf.keras.losses.MeanSquaredError()
+        total_loss = loss_fn(train_preds, y_train)
+        print(total_loss)
+
+
+        print("\n")
+
+        # Update the trainable variables.
+        trainable_vars = res_nn.trainable_variables
+        for var in trainable_vars:
+            var_name = var.name
+            var_val = var.value
+            
+            # Apply l0 regularization to weights in the input layer.
+            if "inp" in var_name and "kernel" in var_name:
+
+                # First update the weight by gradient descent.
+                dW = t.gradient(total_loss, var)
+                var.assign_sub(lr * dW)
+                
+                # Perform proximal l0 regularization.
+                c = tf.constant(regl0 * lr)
+                new_value = proximal_l0(var, c)
+                var.value = new_value
+                                
+            
+
+        
+
+
+        #print(t.gradient(total_loss, res_nn))
+        raise
+
+
+    raise
+
+
+raise
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Get initial weights.
