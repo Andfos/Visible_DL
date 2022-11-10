@@ -182,7 +182,7 @@ class RestrictedNN(tf.keras.Model):
             
             # Create a restriced layer with untrainable weights initialized 
             # to 1 and a linear activation.
-            mod_name = f"{module.replace(':', '_')}_inp"
+            mod_name = f"{module.replace(':', '-')}_inp"
             self.gene_layers[module] = (RestrictedLayer(
                     units=len(input_set),
                     connections=connections,
@@ -236,7 +236,6 @@ class RestrictedNN(tf.keras.Model):
 
             for mod in leaves:
                 
-                mod_name = mod.replace(":", "_")
                 # Input size will be the number of children plus the number of 
                 # inputs directly mapped to the module.
                 #input_size = 0
@@ -250,13 +249,14 @@ class RestrictedNN(tf.keras.Model):
                 # layer name reflects this for later use.
                 if mod in self.term_direct_gene_map:
                         input_size += len(self.term_direct_gene_map[mod])
-                        mod_name = mod_name + "_direct"
                 
                 mod_hidden = self.module_dimensions[mod]            
                 
                 # Add a layer for each module.
                 #with self.name_scope:
                 
+
+                mod_name = f"{mod.replace(':', '-')}_mod"
                 if mod == self.root:
                     self.module_layers[mod] = Dense(
                             1, input_shape=(input_size,),
@@ -293,8 +293,6 @@ class RestrictedNN(tf.keras.Model):
             # Pass the entire input vector into the directly-mapped module 
             #layer.
             layer = self.gene_layers[mod]
-            print(mod)
-            print(layer)
             # Store the output of each of the directly-mapped module layers as 
             # a separate tensor in a dictionary.
             inp_mod_output[mod] = layer(inputs) 

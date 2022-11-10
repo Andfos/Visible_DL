@@ -26,9 +26,10 @@ test_size = 0.20
 
 
 # Set neural network parameters
-term_neurons_func = "n**2"
+term_neurons_func = "4*n**2"
 regl0 = 0.02
-lr = 1
+reg_glasso = 0.02
+lr = .001
 
 
 batch_size = 16
@@ -92,68 +93,106 @@ res_nn.summary()
 
 
 
-for epoch in range(1, epochs):
-    print(f"Epoch {epoch}")
+for epoch in range(1, 100000):
     
     # calculate the loss over the training set.
+    # Get the gradients of all trainable vars and store in a list.
     with tf.GradientTape() as t:
+
+        
 
         train_preds = res_nn(X_train)
         loss_fn = tf.keras.losses.mean_squared_error
         loss_fn = tf.keras.losses.MeanSquaredError()
         total_loss = loss_fn(train_preds, y_train)
-        print(total_loss)
-
-
-        print("\n")
-
-        # Update the trainable variables.
         trainable_vars = res_nn.trainable_variables
-        for var in trainable_vars:
-            var_name = var.name
-            var_val = var.value
-            
-            # Apply l0 regularization to weights in the input layer.
-            if "inp" in var_name and "kernel" in var_name:
-
-                # First update the weight by gradient descent.
-                dW = t.gradient(total_loss, var)
-                var.assign_sub(lr * dW)
-                
-                # Perform proximal l0 regularization.
-                c = tf.constant(regl0 * lr)
-                new_value = proximal_l0(var, c)
-                var.value = new_value
-                                
-            
-
+        grads = t.gradient(total_loss, trainable_vars)
         
 
+        print(f"Epoch: {epoch}\t\t\t\tLoss: {total_loss}")
+        del t
 
-        #print(t.gradient(total_loss, res_nn))
-        raise
+
+    # Update the trainable variables.
+    for i, var in enumerate(trainable_vars):
+        var_name = var.name
+        var_val = var.value
+
+        # Apply l0 regularization to weights in the input layer.
+        if "inp" in var_name and "kernel" in var_name:
+            
+
+            # First update the weight by gradient descent.
+            #dW = t.gradient(total_loss, var)
+            dW = grads[i]
+            var.assign_sub(lr * dW)
+            
+            # Perform proximal l0 regularization.
+            c = tf.constant(regl0 * lr)
+            new_value = proximal_l0(var, c)
+            #var.value = new_value
+            var.assign(new_value)
+            
+
+        elif "mod" in var_name and "kernel" in var_name:
+            var_val = tf.constant(var.numpy())
 
 
-    raise
+            mod_name = var_name.split("_")[0].replace("-", ":")
+            children = res_nn.mod_neighbor_map[mod_name]
+            
+            si = 0
+            if len(children) != 0:
+                #new_value = tf.zeros(var_val.shape)
+                new_value = np.zeros(var_val.shape)
+                
+
+                for child in children:
+                    child_neurons = res_nn.module_dimensions[child]
+                    ei = si + child_neurons
+                    dW = grads[i][si:ei, :]
+                    child_weights = var_val[si:ei, :]
+                    
+
+                    
+                    # Update the weights by gradient descent.
+                    child_weights = child_weights - (lr * dW)
+
+                    # Perform group lasso on the weights coming from a 
+                    # child module.
+                    child_weights = (proximal_glasso_nonoverlap(
+                            child_weights, 
+                            reg_glasso*lr))
+                    
+                
+                    new_value[si:ei, :] = child_weights
+                
+                    # Set the new starting index to the old ending index.
+                    si = si + ei
+                
+
+
+
+
+
+                var.assign(new_value)
+
+        # Update bias weights using standard gradient descent.
+        else:
+            dW = grads[i]
+            var.assign_sub(lr * dW)
+
+
+
+
+
+
+
+
+
 
 
 raise
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
