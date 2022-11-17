@@ -1,0 +1,4 @@
+GO:output   GO:01   default
+GO:01   gene1   gene
+GO:01   gene2   gene
+GO:01   gene3   gene

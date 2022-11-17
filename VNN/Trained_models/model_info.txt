@@ -1,0 +1,2 @@
+Model   Ontology    GeneIndex   DataFunction    NeuronsPerModule    ModuleActivation    Regularization
+model1  onto_01.txt geneID_01.txt   x[1]*x[2]+x[3]  n**2    tanh    none   

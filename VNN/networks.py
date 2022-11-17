@@ -37,6 +37,8 @@ class RestrictedLayer(Dense):
         # This refers to the matrix of 1's and 0's that specify the connections
         super().__init__(units, **kwargs)
         self.connections = connections
+        #self.kernel_regularizer = input_regularizer
+
 
     def call(self, inputs):
         """ Dense implements the operation: output = activation(dot(input,
@@ -87,7 +89,9 @@ class RestrictedNN(tf.keras.Model):
                  n_inp, 
                  term_direct_gene_map,
                  mod_size_map, 
-                 initializer):
+                 initializer,
+                 input_regularizer,
+                 module_regularizer):
         
         super(RestrictedNN, self).__init__()
 
@@ -99,14 +103,18 @@ class RestrictedNN(tf.keras.Model):
         #self.layers = layers
         self.dG = dG       
         self.initializer = initializer
+        #self.input_regularizer = input_regularizer
+        #self.module_regularizer = module_regularizer
 
         self.get_module_dimensions(mod_size_map)
-        
+        self.mask = self.create_connections_mask()
+        print(self.mask)
+        raise
         # Construct the input layer.
-        self.build_input_layer()
+        self.build_input_layer(input_regularizer)
         
         # Construct the layers between modules.
-        self.build_module_layers(self.dG)
+        self.build_module_layers(self.dG, module_regularizer)
         
 
 
@@ -148,9 +156,28 @@ class RestrictedNN(tf.keras.Model):
             print(f"{mod}\t{mod_size}\t{num_children}\t{num_neurons}")
 
 
+    
+    def create_connections_mask(self):
+
+        
+        mask = {}
+        for module, input_set in self.term_direct_gene_map.items():
+            input_set = sorted(list(input_set))
+            
+            # Construct the connections matrix.
+            connections = np.zeros( (self.n_inp, len(input_set)) )
+            j = 0
+            for i in input_set:
+                connections[i][j] = 1
+                j+=1
+            
+            mask[module] = connections
+        
+        return mask
+        
 
 
-    def build_input_layer(self):
+    def build_input_layer(self, input_regularizer):
         """ Construct the input layer for each input-connected module.
 
         The name of the input layer follows the form <module_name>_inp. The
@@ -168,7 +195,6 @@ class RestrictedNN(tf.keras.Model):
         # Initialize a dictionary to keep track of input layers for each 
         # module.
         self.gene_layers = {}
-        
         # Iterate through the modules that are directly mapped to the input.
         for module, input_set in self.term_direct_gene_map.items():
             input_set = sorted(list(input_set))
@@ -180,6 +206,7 @@ class RestrictedNN(tf.keras.Model):
                 connections[i][j] = 1
                 j+=1
             
+            mask[module] = connections
             # Create a restriced layer with untrainable weights initialized 
             # to 1 and a linear activation.
             mod_name = f"{module.replace(':', '-')}_inp"
@@ -190,13 +217,16 @@ class RestrictedNN(tf.keras.Model):
                     activation="linear",
                 use_bias=False,
                 name=mod_name,
-                kernel_initializer=initializers.Ones(), 
+                #kernel_initializer=initializers.Ones(), 
+                kernel_initializer=initializers.Ones(),
+                kernel_regularizer=input_regularizer,
                 trainable=True))
 
+        return mask
 
 
 
-    def build_module_layers(self, dG):
+    def build_module_layers(self, dG, module_regularizer):
         """ Construct the layers for each module in the ontology.
 
         The module layer takes in a tensor output from a module_inp layer if 
@@ -205,6 +235,8 @@ class RestrictedNN(tf.keras.Model):
         child modules. By default, the sigmoid activation is applied and a bias 
         term is included. 
         """
+        # Make a copy of the graph.
+        dG_copy = dG.copy()
 
         # Initialize a dictionary to store the layers of the modules.
         self.module_layers = {}
@@ -212,18 +244,18 @@ class RestrictedNN(tf.keras.Model):
         self.mod_neighbor_map = {}
 
         # Iterate through the nodes of the directed graph. 
-        for mod in dG.nodes():
+        for mod in dG_copy.nodes():
             self.mod_neighbor_map[mod] = []
             
             # Iterate through the children of the node.
-            for child in dG.neighbors(mod):
+            for child in dG_copy.neighbors(mod):
                 self.mod_neighbor_map[mod].append(child)
         
         # Define the leaves of the ontology as those which are not
         # directed towards any other modules.
         
         while True:
-            leaves = [n for n,d in dG.out_degree() if d==0]
+            leaves = [n for n,d in dG_copy.out_degree() if d==0]
 
            
             if len(leaves) == 0:
@@ -257,27 +289,43 @@ class RestrictedNN(tf.keras.Model):
                 
 
                 mod_name = f"{mod.replace(':', '-')}_mod"
+                mod_output = f"{mod}-output"
+                mod_output_name = f"{mod_name}_output"
                 if mod == self.root:
                     self.module_layers[mod] = Dense(
                             1, input_shape=(input_size,),
                             activation="linear", 
                             name=mod_name, 
-                            use_bias=True, 
-                            kernel_initializer=self.initializer)
+                            use_bias=False, 
+                            kernel_initializer=self.initializer,
+                            kernel_regularizer=module_regularizer)
                 else:
                     self.module_layers[mod] = Dense(
                             self.module_dimensions[mod], 
                             input_shape=(input_size,),
-                            activation="sigmoid", 
+                            activation="linear", 
                             name=mod_name, 
-                            use_bias=True, 
+                            use_bias=False, 
+                            kernel_initializer=self.initializer,
+                            kernel_regularizer=module_regularizer)
+                    
+                                         
+                    # Add a layer with a single neuron to represent the final
+                    # output of the module.
+                    self.module_layers[mod_output] = Dense(
+                            1, 
+                            input_shape=(self.module_dimensions[mod],),
+                            activation="linear", 
+                            name=mod_output_name, 
+                            use_bias=False, 
                             kernel_initializer=self.initializer)
-
-            dG.remove_nodes_from(leaves)
+                    
+                
+            dG_copy.remove_nodes_from(leaves)
                  
 
 
-    def call(self, inputs):
+    def call(self, inputs, prune=False):
         #X = np.array([[2, 2, 2, 2],
         #              [1, 1, 1, 1]])
         
@@ -297,8 +345,6 @@ class RestrictedNN(tf.keras.Model):
             # a separate tensor in a dictionary.
             inp_mod_output[mod] = layer(inputs) 
 
-            #print(f"Module {mod}")
-            #print(inp_mod_output[mod])
 
         
         mod_output_map = {}
@@ -308,8 +354,13 @@ class RestrictedNN(tf.keras.Model):
                 # If the module is directly mapped to other modules, include 
                 # the output of the child module in the parent module's input
                 # vector.
+
                 for child_mod in self.mod_neighbor_map[mod]:
+
+                    child_mod_output_name = f"{child_mod}-output"
+                    
                     child_input_list.append(mod_output_map[child_mod])
+                    #child_input_list.append(mod_output_map[child_mod_output_name])
                 
 
                 # If the module is directly mapped to the input, include the 
@@ -321,32 +372,76 @@ class RestrictedNN(tf.keras.Model):
                 # along the same dimension.
                 child_input = tf.concat(child_input_list, 1)
 
-                #print(f"Module {mod}")
-                #print("Child input")
-                #print(child_input)
-                #print("\n")
 
                 # Pass the input to the module's layer.
                 layer = self.module_layers[mod]
                 mod_weighted_input = layer(child_input) 
                 
-                # Apply the sigmoid function on the weighted input to the module 
-                # neuron. Add the output to a dictionary mapping the term to
-                # it's post-activation output.
-                
-                #mod_output = tf.math.sigmoid(mod_weighted_input)
+
+                # If there are no auxiliary layers...
                 mod_output_map[mod] = mod_weighted_input
+                
+                
+                """
+                if mod == self.root:
+                    mod_output_map[mod] = mod_weighted_input
+
+                else:
+
+                    mod_output_name = mod_output = f"{mod}-output"
+                    output_layer = self.module_layers[mod_output_name]
+                    mod_output = output_layer(mod_weighted_input)
+
+                    # Apply the sigmoid function on the weighted input to the module 
+                    # neuron. Add the output to a dictionary mapping the term to
+                    # it's post-activation output.
+                    
+                    #mod_output = tf.math.sigmoid(mod_weighted_input)
+                    #mod_output_map[mod] = mod_weighted_input
+                    mod_output_map[mod_output_name] = mod_output
+                """
+
+
+        if prune == False:
+            return(mod_output_map[self.root])
         
-
-        #(mod_output_map["GO:output"])
-
-
-        return(mod_output_map[self.root])
+        else:
+            return(mod_output_map[self.root], mod_output_map)
 
 
             
 
             
+
+
+def save_model(filepath, model, model_rmse, rmse_threshold = 1):
+    """ Checks if model has converged to solution. Model is saved if it has."""
+    converge = False
+    if model_rmse <= rmse_threshold:
+        print("Model saved.")
+        converge = True
+        model.save(filepath)
+
+    return converge
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
             
 

@@ -1,0 +1,4 @@
+0   gene1
+1   gene2
+2   gene3
+3   gene4

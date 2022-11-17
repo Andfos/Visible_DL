@@ -1,3 +1,4 @@
+import keras
 import sys 
 from tensorflow.keras import initializers
 import datetime
@@ -6,16 +7,41 @@ import numpy as np
 from utils import *
 #import DrugCell
 #from DrugCell import *
-from networks import RestrictedNN, MLP
+from networks import RestrictedNN, save_model
 from tensorflow.keras.utils import plot_model
 from packaging import version
 import tensorboard
 from penalties import *
+from training import train_with_palm, check_network, prune 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ### Set Parameters ###
+# Set general parameters
+test_num = "03"
+pretrained_model = False
+model_infile = "Trained_models/model3"  # Only if using pretrained model.
+model_outfile = "Trained_models/pruned_model3" 
+prune_train_iterations = 20
+
 # Set the functions and parameters to generate the train and test data.
-func = "x[0] * x[1] + x[2]"
+func = "x[0] + x[1]"
 noise_sd = "0"
 data_size = 1000
 input_dim = 3
@@ -24,19 +50,22 @@ upper = 10
 test_size = 0.20
 
 
-
 # Set neural network parameters
-term_neurons_func = "4*n**2"
-regl0 = 0.02
-reg_glasso = 0.02
-lr = .001
+term_neurons_func = "1"
+regl0 = 1
+reg_glasso = 5 
+lr = .01
 
-
-batch_size = 16
-epochs = 100
+batch_size = 400
+train_epochs = 2000
 ngene = 3
 #initializer = initializers.Ones()
 initializer = initializers.GlorotUniform()
+input_regularizer = "l2"
+module_regularizer = "l2"
+
+
+
 
 
 ### Load Data ###
@@ -58,129 +87,188 @@ X_train, X_test, y_train, y_test = train_test_split(X, y,
 
 
 # load ontology
-gene2id_mapping = load_mapping("Data/geneID_test.txt")
-dG, root, term_size_map, term_direct_gene_map = load_ontology("Data/onto_test2terms.txt", gene2id_mapping)
+gene2id_mapping = load_mapping(f"Data/geneID_{test_num}.txt")
+
+dG, root, term_size_map, term_direct_gene_map = load_ontology(
+        f"Data/onto_{test_num}.txt", 
+        gene2id_mapping)
 
 
-# Load the VNN
-res_nn = RestrictedNN(
-        root=root, 
-        dG=dG, 
-        module_neurons_func=term_neurons_func, 
-        n_inp=ngene, 
-        term_direct_gene_map=term_direct_gene_map,
-        mod_size_map=term_size_map, 
-        initializer=initializer) 
-
-print(res_nn)
-#print(res_nn.variables)
-#print(res_nn.name_scope)
-#print(res_nn.submodules)
 
 
-"""
-module = MLP(input_size=5, sizes=[5, 5])
-print(module.variables)
-raise
-"""
 
 
+# Load a pretrained model or initialize a new one.
+if pretrained_model:
+    res_nn = keras.models.load_model(model_infile)
+
+else:
+    res_nn = RestrictedNN(
+            root=root, 
+            dG=dG, 
+            module_neurons_func=term_neurons_func, 
+            n_inp=ngene, 
+            term_direct_gene_map=term_direct_gene_map,
+            mod_size_map=term_size_map, 
+            initializer=initializer, 
+            input_regularizer=input_regularizer,
+            module_regularizer=module_regularizer) 
+
+
+# Compile and build the model.
 res_nn.compile(loss='mean_squared_error', optimizer = "adam")
 res_nn.build(input_shape = (batch_size, ngene))
 res_nn.summary()
 
 
 
+#mask = res_nn.build_input_layer(input_regularizer)
+
+res_init_weights = res_nn.get_weights()
 
 
-for epoch in range(1, 100000):
+# Fit the model if not trained yet. Save it if it converges to solution.
+if not pretrained_model:
+    res_history = res_nn.fit(
+            X_train, y_train, 
+            epochs = train_epochs, batch_size = batch_size, 
+            validation_split = 0.2)
+
+
     
-    # calculate the loss over the training set.
+    res_final_weights = res_nn.get_weights()
+    print("Initial weights")
+    print(res_init_weights)
+    print("\n")
+    print("Final weights")
+    print(res_final_weights)
+    print("Mask")
+
+    mask = res_nn.build_input_layer(input_regularizer)
+    print(mask)
+    dog = res_nn.get_weights()
+    print("dof")
+    print(dog)
+    raise
+    
+
+
+    # Save the model if it converged.
+    model_savefile = model_outfile
+    train_rmse = round(sqrt(res_nn.evaluate(X_train, y_train)), 2)
+    save_model(model_savefile, res_nn, train_rmse, rmse_threshold = 2)
+
+    raise
+
+### Pruning
+# Train the network for a certain number of epochs.
+for prune_train_iter in range(0, prune_train_iterations):
+
+    print(f"Pruning/Training iteration: {prune_train_iter}")
+    # Retrain the model.
+    res_nn.fit(
+            X_train, y_train, 
+            epochs = 10, batch_size = batch_size, 
+            validation_split = 0.2)
+
+    # Prune the model for a number of prunning epochs.
+    prune(res_nn, X_train, y_train, lr, regl0, reg_glasso, prune_epochs = 10)
+
+    # Check the network architecture.
+    check_network(res_nn, dG, root)
+
+
+
+raise
+
+
+
+
+
+
+
+
+"""
+    # Get the gradients of all trainable vars and store in a list.
+    with tf.GradientTape() as t:
+
+        # Pass the training data through and make predictions.
+        # Calculate the loss.
+        #train_preds, mod_output_map = res_nn(X_train, prune=True)
+        train_preds = res_nn(X_train, prune=False)
+        total_loss = loss_fn(train_preds, y_train)
+        
+
+        print(f"Epoch: {epoch}\t\t\t\tLoss: {total_loss}")
+        # Get the gradients for all trainable variables.
+        trainable_vars = res_nn.trainable_variables
+        grads = t.gradient(total_loss, trainable_vars)
+
+
+        # Delete the gradient tape.
+        del t
+
+    # Update the model parameters using PALM.
+    res_nn = train_with_palm(res_nn, trainable_vars, grads, lr, regl0, reg_glasso) 
+    #check_network(res_nn, dG, root)
+# Check network structure.
+check_network(res_nn, dG, root)
+
+
+res_history = res_nn.fit(
+        X_train, y_train, 
+        epochs = epochs, batch_size = batch_size, 
+        validation_split = 0.2)
+
+
+
+
+# Train the network for a certain number of epochs.
+for epoch in range(0, 8000):
+    
     # Get the gradients of all trainable vars and store in a list.
     with tf.GradientTape() as t:
 
         
-
-        train_preds = res_nn(X_train)
-        loss_fn = tf.keras.losses.mean_squared_error
-        loss_fn = tf.keras.losses.MeanSquaredError()
+        # Pass the training data through and make predictions.
+        # Calculate the loss.
+        #train_preds, mod_output_map = res_nn(X_train, prune=True)
+        train_preds = res_nn(X_train, prune=False)
         total_loss = loss_fn(train_preds, y_train)
-        trainable_vars = res_nn.trainable_variables
-        grads = t.gradient(total_loss, trainable_vars)
         
+        total_loss = 0
+        for name, output in mod_output_map.items():
+            if name == root:
+                added_loss= loss_fn(output, y_train)
+                total_loss += added_loss
+                print(f"Loss added from {name}: {added_loss}")
+
+
+            else: # change 0.2 to smaller one for big terms
+                added_loss = 0.2 * loss_fn(output, y_train)
+                total_loss += added_loss
+                print(f"Loss added from {name}: {added_loss}")
+
+        print(total_loss)
+
 
         print(f"Epoch: {epoch}\t\t\t\tLoss: {total_loss}")
+        # Get the gradients for all trainable variables.
+        trainable_vars = res_nn.trainable_variables
+        grads = t.gradient(total_loss, trainable_vars)
+
+
+        # Delete the gradient tape.
         del t
 
+    # Update the model parameters using PALM.
+    res_nn = train_with_palm(res_nn, trainable_vars, grads, lr, regl0, reg_glasso) 
+    #check_network(res_nn, dG, root)
+    
 
-    # Update the trainable variables.
-    for i, var in enumerate(trainable_vars):
-        var_name = var.name
-        var_val = var.value
-
-        # Apply l0 regularization to weights in the input layer.
-        if "inp" in var_name and "kernel" in var_name:
-            
-
-            # First update the weight by gradient descent.
-            #dW = t.gradient(total_loss, var)
-            dW = grads[i]
-            var.assign_sub(lr * dW)
-            
-            # Perform proximal l0 regularization.
-            c = tf.constant(regl0 * lr)
-            new_value = proximal_l0(var, c)
-            #var.value = new_value
-            var.assign(new_value)
-            
-
-        elif "mod" in var_name and "kernel" in var_name:
-            var_val = tf.constant(var.numpy())
-
-
-            mod_name = var_name.split("_")[0].replace("-", ":")
-            children = res_nn.mod_neighbor_map[mod_name]
-            
-            si = 0
-            if len(children) != 0:
-                #new_value = tf.zeros(var_val.shape)
-                new_value = np.zeros(var_val.shape)
-                
-
-                for child in children:
-                    child_neurons = res_nn.module_dimensions[child]
-                    ei = si + child_neurons
-                    dW = grads[i][si:ei, :]
-                    child_weights = var_val[si:ei, :]
-                    
-
-                    
-                    # Update the weights by gradient descent.
-                    child_weights = child_weights - (lr * dW)
-
-                    # Perform group lasso on the weights coming from a 
-                    # child module.
-                    child_weights = (proximal_glasso_nonoverlap(
-                            child_weights, 
-                            reg_glasso*lr))
-                    
-                
-                    new_value[si:ei, :] = child_weights
-                
-                    # Set the new starting index to the old ending index.
-                    si = si + ei
-                
-
-
-
-
-
-                var.assign(new_value)
-
-        # Update bias weights using standard gradient descent.
-        else:
-            dW = grads[i]
-            var.assign_sub(lr * dW)
+# Check network structure.
+check_network(res_nn, dG, root)
+"""
 
 
 
@@ -189,6 +277,12 @@ for epoch in range(1, 100000):
 
 
 
+
+
+
+
+
+raise
 
 
 
