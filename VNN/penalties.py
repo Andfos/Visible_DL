@@ -1,5 +1,6 @@
 from math import *
 import tensorflow as tf
+import numpy as np
 
 
 def proximal_l0(alpha, c, debug=False):
@@ -12,15 +13,18 @@ def proximal_l0(alpha, c, debug=False):
     h = (alpha_abs >= theta)
     h = tf.cast(h, dtype = tf.float32) 
     
-
-    if debug:
-        print(f"Absolute value of alpha:\n{alpha_abs}\n")
-        print(f"Theta: {theta}\n")
-        print(f"Hard threshold for weights:\n{h}\n")
-
     # Alpha[i][j] retains its in itial value or becomes 0.
     alpha_new = h * alpha   
-
+   
+    # Print calculations if debug mode is turned on.
+    if debug:
+        alpha_array = np.array(alpha.numpy())
+        print("Abs(Weights)\t\tTheta\t\t\t=\tNew weights")
+        for b in range(len(alpha_array)):
+            print(f"{alpha_abs[b]}\t>\t{theta}\t=\t{alpha_new[b]}\n")
+        print("\n")
+    
+    raise
     return alpha_new
 
 

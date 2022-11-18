@@ -107,9 +107,9 @@ class RestrictedNN(tf.keras.Model):
         #self.module_regularizer = module_regularizer
 
         self.get_module_dimensions(mod_size_map)
-        self.mask = self.create_connections_mask()
-        print(self.mask)
-        raise
+        #self.mask = self.create_connections_mask()
+        #print(self.mask)
+        #raise
         # Construct the input layer.
         self.build_input_layer(input_regularizer)
         
@@ -195,6 +195,7 @@ class RestrictedNN(tf.keras.Model):
         # Initialize a dictionary to keep track of input layers for each 
         # module.
         self.gene_layers = {}
+        self.direct_layers = {}
         # Iterate through the modules that are directly mapped to the input.
         for module, input_set in self.term_direct_gene_map.items():
             input_set = sorted(list(input_set))
@@ -206,10 +207,12 @@ class RestrictedNN(tf.keras.Model):
                 connections[i][j] = 1
                 j+=1
             
-            mask[module] = connections
+            
             # Create a restriced layer with untrainable weights initialized 
             # to 1 and a linear activation.
             mod_name = f"{module.replace(':', '-')}_inp"
+            mod_name_direct = f"{module.replace(':', '-')}_direct"
+            
             self.gene_layers[module] = (RestrictedLayer(
                     units=len(input_set),
                     connections=connections,
@@ -219,10 +222,21 @@ class RestrictedNN(tf.keras.Model):
                 name=mod_name,
                 #kernel_initializer=initializers.Ones(), 
                 kernel_initializer=initializers.Ones(),
+                #kernel_regularizer=input_regularizer,
+                trainable=False))
+            
+
+            self.direct_layers[module] = (RestrictedLayer(
+                    units=len(input_set),
+                    connections=np.identity(len(input_set)),
+                    input_shape=(len(input_set),),
+                    activation="linear",
+                use_bias=False,
+                name=mod_name_direct,
+                kernel_initializer=initializers.Ones(),
                 kernel_regularizer=input_regularizer,
                 trainable=True))
 
-        return mask
 
 
 
@@ -280,7 +294,7 @@ class RestrictedNN(tf.keras.Model):
                 # If the module is directly mapped to inputs, make sure the 
                 # layer name reflects this for later use.
                 if mod in self.term_direct_gene_map:
-                        input_size += len(self.term_direct_gene_map[mod])
+                    input_size += len(self.term_direct_gene_map[mod])
                 
                 mod_hidden = self.module_dimensions[mod]            
                 
@@ -339,11 +353,14 @@ class RestrictedNN(tf.keras.Model):
         for mod, input_set in self.term_direct_gene_map.items():
             
             # Pass the entire input vector into the directly-mapped module 
-            #layer.
-            layer = self.gene_layers[mod]
+            #input layer.
+            inp_layer = self.gene_layers[mod]
+            direct_layer = self.direct_layers[mod]
+            
             # Store the output of each of the directly-mapped module layers as 
             # a separate tensor in a dictionary.
-            inp_mod_output[mod] = layer(inputs) 
+            temp = inp_layer(inputs)
+            inp_mod_output[mod] = direct_layer(temp) 
 
 
         

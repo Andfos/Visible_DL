@@ -4,8 +4,69 @@ from penalties import *
 import networkx as nx
 
 
+
+
+
+def train_network(model, X_train, y_train, train_epochs, loss_fn, optimizer):
+    
+    # Get the connections mask.
+    mask = model.create_connections_mask()
+    
+    # Iterate for a number of training epochs.
+    for epoch in range(train_epochs):
+        
+        # Pass the training data through the model and make predictions.
+        # Compute the loss, including the loss from regularization.
+        # Get the gradients for all trainable variables.
+        
+        with tf.GradientTape() as tape:
+            train_preds = model(X_train)
+            loss = loss_fn(y_true=y_train, y_pred=train_preds)
+            loss += sum(model.losses)
+
+        grads = tape.gradient(loss, model.trainable_variables)
+        del tape
+        
+        # Uodate the weights of the variables in the nwtwork.
+        for i, var in enumerate(model.trainable_variables):
+            module_name = var.name.split("_")[0].replace("-",":")
+            
+            # Apply the mask to the input gradients.
+            if "direct" in var.name:
+                grads[i] = grads[i] * mask[module_name]
+            
+
+        
+        print("Step: {}, Loss: {}".format(optimizer.iterations.numpy(),
+                                          loss.numpy()))
+        
+        optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
+    print(model.trainable_variables)
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def train_with_palm(
-        model, trainable_vars, grads, lr, regl0, reg_glasso, debug=False):
+        model, trainable_vars, grads, lr, lip, regl0, reg_glasso, debug=False):
     
     # Update the trainable variables.
     for i, var in enumerate(trainable_vars):
@@ -13,32 +74,25 @@ def train_with_palm(
 
 
         # Apply l0 regularization to weights in the input layer.
-        if "inp" in var_name and "kernel" in var_name:
-            
+        if "direct" in var_name and "kernel" in var_name:
+
             # First update the weight by gradient descent.
             dW = grads[i]
+            var.assign_sub(lip * dW)
             
+            # Print calculations if debug mode is turned on.
             if debug:
-                print(f"\nUpdating {var_name}...")
-                print(f"Initial value of {var_name}")
-                print(var.value)
-                print(f"\nGradient of {var_name}")
-                print(dW)
-                print("\n")
-                raise
-
-                var.assign_sub(lr * dW)
-                
-                """
-                print("final_value")
-                print(var.value)
-                print("\n\n\n")
-                """
-
+                print(f"\nUpdating {var_name}...\n")
+                init_val = np.array(var.numpy())
+                new_var = init_val - lr*dW
+                print("Initial weights\t-\tlr   *   gradient\t=\tNew weights")
+                for b in range(len(init_val)):
+                    print(f"{init_val[b]}\t-\t{lr} * {dW[b]}\t=\t{init_val[b]}\n")
+                print("\n")            
             
             # Perform proximal l0 regularization.
-            c = tf.constant(regl0 * lr)
-            new_value = proximal_l0(var, c)
+            c = tf.constant(regl0 * lip)
+            new_value = proximal_l0(var, c, debug=True)
             var.assign(new_value)
             
         # Apply the group lasso to the weights between modules.
@@ -171,7 +225,11 @@ def check_network(model,dG, root):
 
 
 def prune(
-        model, X_train, y_train, lr, regl0, reg_glasso, prune_epochs = 10):
+        model, 
+        X_train, y_train, 
+        lr, lip, regl0, reg_glasso, 
+        prune_epochs = 10, 
+        debug=True):
     """ Input the model with the training data, return the pruned model."""
     
     # Define the loss function.
@@ -193,8 +251,9 @@ def prune(
             del t
 
         # Update the model parameters using PALM.
-        model = train_with_palm(
-                model, trainable_vars, grads, lr, regl0, reg_glasso, debug=True) 
+        model = train_with_palm(model, trainable_vars, grads, 
+                                lr=lr, lip=lip, regl0=regl0, reg_glasso=reg_glasso, 
+                                debug=True) 
     
 
     return model

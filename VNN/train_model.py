@@ -12,8 +12,7 @@ from tensorflow.keras.utils import plot_model
 from packaging import version
 import tensorboard
 from penalties import *
-from training import train_with_palm, check_network, prune 
-
+from training import train_with_palm, check_network, prune, train_network
 
 
 
@@ -55,14 +54,31 @@ term_neurons_func = "1"
 regl0 = 1
 reg_glasso = 5 
 lr = .01
+lip = 0.01
+loss_fn = tf.keras.losses.MeanSquaredError()
 
 batch_size = 400
-train_epochs = 2000
+train_epochs = 1000
 ngene = 3
 #initializer = initializers.Ones()
 initializer = initializers.GlorotUniform()
 input_regularizer = "l2"
 module_regularizer = "l2"
+
+
+
+optimizer = tf.keras.optimizers.Adam(
+    learning_rate=0.001,
+    beta_1=0.9,
+    beta_2=0.999,
+    epsilon=1e-07,
+    amsgrad=False,
+    name='Adam')
+
+
+
+
+
 
 
 
@@ -129,13 +145,23 @@ res_init_weights = res_nn.get_weights()
 
 # Fit the model if not trained yet. Save it if it converges to solution.
 if not pretrained_model:
+    train_network(res_nn, X_train, y_train, 
+                  train_epochs=train_epochs, loss_fn=loss_fn, optimizer=optimizer)
+    raise
+
+
+
+
     res_history = res_nn.fit(
             X_train, y_train, 
             epochs = train_epochs, batch_size = batch_size, 
             validation_split = 0.2)
 
 
-    
+
+
+
+    """
     res_final_weights = res_nn.get_weights()
     print("Initial weights")
     print(res_init_weights)
@@ -159,6 +185,21 @@ if not pretrained_model:
     save_model(model_savefile, res_nn, train_rmse, rmse_threshold = 2)
 
     raise
+    """
+
+
+
+
+
+res_final_weights = res_nn.get_weights()
+print("Initial weights")
+print(res_init_weights)
+print("\n")
+print("Final weights")
+print(res_final_weights)
+
+
+
 
 ### Pruning
 # Train the network for a certain number of epochs.
@@ -172,7 +213,9 @@ for prune_train_iter in range(0, prune_train_iterations):
             validation_split = 0.2)
 
     # Prune the model for a number of prunning epochs.
-    prune(res_nn, X_train, y_train, lr, regl0, reg_glasso, prune_epochs = 10)
+    prune(res_nn, X_train, y_train, 
+          lr=lr, lip=lip, regl0=regl0, reg_glasso=reg_glasso, 
+          prune_epochs = 10)
 
     # Check the network architecture.
     check_network(res_nn, dG, root)
