@@ -126,18 +126,27 @@ def load_ontology(file_name, input_id_map):
             if parent not in module_direct_input_map:
                 module_direct_input_map[parent] = set()
 
+            
             # Add the id of the input to the module that it is mapped to.
             module_direct_input_map[parent].add(input_id_map[child])
             
             # Add the input to the set of all inputs.
             input_set.add(child)
 
+            # Maybe delete this.
+            G.add_edge(parent, child)
 
     file_handle.close()
     n_inp = len(input_set)
 
     # Iterate through the modules in the directed graph.
     for module in G.nodes():
+        
+        # If the module is an input, skip it.
+        if not module[0].isupper():
+            module_size_map[module] = 1
+            continue
+
         module_input_set = set()
 
         # If the module has a direct mapping to an input, 
@@ -186,7 +195,86 @@ def load_ontology(file_name, input_id_map):
 
 
 
+def draw_graph(G, root, module_size_map, 
+               title="Ontology", draw_inputs=True, jitter=False):
 
+    G_copy = G.copy()
+    color_list = []
+    node_list = []
+    size_list = []
+    pos_map = {}
+        
+    x = 0.0
+    while True:
+
+        leaves = [n for n,d in G_copy.out_degree() if d==0]
+        
+        
+
+        if len(leaves) == 0:
+            break
+        
+        if len(leaves) % 2 != 0:
+            mid = int((len(leaves)-1)/2)
+        else:
+            mid = int(len(leaves)/2)
+        
+
+        
+        for i, node in enumerate(leaves):
+            y = (mid - i) * 3
+
+            
+            if jitter and not node[0].islower():
+                x_coord = x + float(np.random.uniform(-0.2, 0.2, 1))
+                
+                if y > 0:
+                    y_coord  =  y + float(np.random.uniform(0, 0.5, 1))
+
+                elif y < 0:
+                    y_coord  =  y + float(np.random.uniform(-0.5, 0, 1))
+                
+                else:
+                    y_coord  =  y + float(np.random.uniform(0, 0, 1)) 
+
+
+                pos_map[node] = (x_coord, y_coord)
+            else:
+                pos_map[node] = (x, y)
+
+
+            if node == root:
+                node_list.append(node)
+                color_list.append("lightblue")
+                size_list.append(200 * module_size_map[node] + 600)
+
+            elif node[0].isupper():
+                node_list.append(node)
+                color_list.append("coral")
+                size_list.append(200 * module_size_map[node] + 600)
+            
+            else:
+                if draw_inputs == True:
+                    node_list.append(node)
+                    color_list.append("lightgreen")
+                    size_list.append(600)
+
+
+        x += 1.0
+        G_copy.remove_nodes_from(leaves) 
+        
+
+    nx.draw_networkx(G, 
+            arrows = True, 
+            node_shape="o", 
+            pos=pos_map,
+            nodelist=node_list,
+            node_color=color_list, 
+            node_size = size_list,
+            font_size=6)
+
+    plt.title(title)
+    plt.show()
 
     
 
@@ -246,7 +334,76 @@ def build_input_vector(row_data, num_col, original_features):
 
 
 
+def debugger(mode, run_debugger = True, **kwargs):
 
+    if mode == "input_layer" and run_debugger == True:
+        var_name = kwargs["var_name"]
+        init_val = kwargs["init_val"]
+        lr = kwargs["lr"]
+        dW = kwargs["dW"]
+
+        print(f"\nUpdating {var_name}...\n")
+        new_var = init_val - lr*dW
+        print("Initial weights - (lr * gradient) = New weights")
+        for b in range(len(init_val)):
+            print(f"{init_val[b]}\t-\t{lr} * {dW[b]}\t=\t{init_val[b]}\n")
+        print("\n")            
+
+    # Debugging for proximal L0 (penalties.py)
+    if mode == "L0" and run_debugger == True:
+        alpha_abs = kwargs["alpha_abs"]
+        theta = kwargs["theta"]
+        alpha_new = kwargs["alpha_new"]
+
+        alpha_array = np.array(alpha_abs.numpy())
+        print("Abs(Weights) >< Theta = New weights")
+        for b in range(len(alpha_array)):
+            print(f"{alpha_abs[b]}\t>\t{theta}\t=\t{alpha_new[b]}\n")
+        print("\n\n")
+
+    # Debugging for weight updates between the input layer and a module layer
+    # directly mapped to an input layer.
+    if mode == "module_layer" and run_debugger == True:
+        child_name = kwargs["child_name"]
+        mod_name = kwargs["mod_name"]
+        init_weights = kwargs["init_weights"]
+        lr = kwargs["lr"]
+        dW = kwargs["dW"]
+        temp_weights = kwargs["temp_weights"]
+
+
+        
+        print(f"\nUpdating weights from {child_name} that feed ", 
+              f"into {mod_name}...\n")
+        
+        print("Initial weights - (lr * gradient) = New weights")
+        if init_weights.ndim > 1:
+            for dim in range(init_weights.ndim):
+                print(f"{init_weights[dim]}\t-\t{lr} * {dW[dim]}\t=\t{temp_weights[dim]}")
+            print("\n")            
+        
+        else:
+            print(f"{init_weights}\t-\t{lr} * {dW}\t=\t{temp_weights}")
+            print("\n")            
+    
+    if mode == "group_lasso" and run_debugger == True:
+        alpha = kwargs["alpha"]
+        alpha_norm = kwargs["alpha_norm"]
+        c = kwargs["c"]
+        alpha_new = kwargs["alpha_new"]
+
+    
+        print("If matrix norm < c, matrix --> 0")
+        print("Otherwise, matrix --> (matrix / matrix_norm) * (matrix_norm - c)")
+
+        print(f"Matrix norm: {alpha_norm} <> C: {c}")
+        if alpha.ndim > 1:
+            for dim in range(alpha.ndim):
+                print(f"{alpha[dim]}\t-->\t{alpha_new[dim]}")
+            print("\n\n")
+        else:
+            print(f"{alpha}\t-->\t{alpha_new}")
+            print("\n\n")
 
 
 

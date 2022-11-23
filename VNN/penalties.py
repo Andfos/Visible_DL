@@ -1,6 +1,16 @@
 from math import *
 import tensorflow as tf
 import numpy as np
+from utils import debugger
+
+
+
+
+
+def proximal_l2(yvec, c):
+    return (1./(1.+c))*yvec
+
+
 
 
 def proximal_l0(alpha, c, debug=False):
@@ -18,13 +28,9 @@ def proximal_l0(alpha, c, debug=False):
    
     # Print calculations if debug mode is turned on.
     if debug:
-        alpha_array = np.array(alpha.numpy())
-        print("Abs(Weights)\t\tTheta\t\t\t=\tNew weights")
-        for b in range(len(alpha_array)):
-            print(f"{alpha_abs[b]}\t>\t{theta}\t=\t{alpha_new[b]}\n")
-        print("\n")
+        debugger("L0", True, 
+                 alpha_abs=alpha_abs, theta=theta, alpha_new=alpha_new)
     
-    raise
     return alpha_new
 
 
@@ -48,11 +54,9 @@ def proximal_glasso_nonoverlap(alpha, c, debug=False):
                 alpha.shape,
                 dtype=tf.dtypes.float32)
 
-    
-
+        
     if debug:
-        print(f"Normalization of weights matix: {alpha_norm}\n")
-        print(f"C: {c}\n")
-        print(f"New weight matrix:\n{alpha_new}\n")
+        debugger("group_lasso", True, 
+                 alpha=alpha, alpha_norm=alpha_norm, c=c, alpha_new=alpha_new)
     
     return alpha_new

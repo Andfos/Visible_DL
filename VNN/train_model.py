@@ -13,7 +13,7 @@ from packaging import version
 import tensorboard
 from penalties import *
 from training import train_with_palm, check_network, prune, train_network
-
+import networkx as nx
 
 
 
@@ -33,33 +33,33 @@ from training import train_with_palm, check_network, prune, train_network
 
 ### Set Parameters ###
 # Set general parameters
-test_num = "03"
+test_num = "04"
 pretrained_model = False
 model_infile = "Trained_models/model3"  # Only if using pretrained model.
 model_outfile = "Trained_models/pruned_model3" 
-prune_train_iterations = 20
+prune_train_iterations = 20000
 
 # Set the functions and parameters to generate the train and test data.
-func = "x[0] + x[1]"
+func = "x[0] * x[1] + x[2]"
 noise_sd = "0"
 data_size = 1000
-input_dim = 3
+input_dim = 7
 lower = -10
 upper = 10
 test_size = 0.20
 
 
 # Set neural network parameters
-term_neurons_func = "1"
-regl0 = 1
+term_neurons_func = "16"
+regl0 = 5
 reg_glasso = 5 
-lr = .01
-lip = 0.01
+lr = .001
+lip = 0.0001
 loss_fn = tf.keras.losses.MeanSquaredError()
 
 batch_size = 400
-train_epochs = 1000
-ngene = 3
+train_epochs = 300
+ngene = 7
 #initializer = initializers.Ones()
 initializer = initializers.GlorotUniform()
 input_regularizer = "l2"
@@ -105,9 +105,21 @@ X_train, X_test, y_train, y_test = train_test_split(X, y,
 # load ontology
 gene2id_mapping = load_mapping(f"Data/geneID_{test_num}.txt")
 
+
+
 dG, root, term_size_map, term_direct_gene_map = load_ontology(
         f"Data/onto_{test_num}.txt", 
         gene2id_mapping)
+
+
+
+#draw_graph(dG, root, term_size_map, draw_inputs=True, jitter=True)
+
+
+
+
+
+
 
 
 
@@ -121,7 +133,7 @@ if pretrained_model:
 else:
     res_nn = RestrictedNN(
             root=root, 
-            dG=dG, 
+            dG=dG,
             module_neurons_func=term_neurons_func, 
             n_inp=ngene, 
             term_direct_gene_map=term_direct_gene_map,
@@ -137,7 +149,6 @@ res_nn.build(input_shape = (batch_size, ngene))
 res_nn.summary()
 
 
-
 #mask = res_nn.build_input_layer(input_regularizer)
 
 res_init_weights = res_nn.get_weights()
@@ -145,18 +156,17 @@ res_init_weights = res_nn.get_weights()
 
 # Fit the model if not trained yet. Save it if it converges to solution.
 if not pretrained_model:
-    train_network(res_nn, X_train, y_train, 
+    res_nn = train_network(res_nn, X_train, y_train, 
                   train_epochs=train_epochs, loss_fn=loss_fn, optimizer=optimizer)
-    raise
 
 
 
-
+    """
     res_history = res_nn.fit(
             X_train, y_train, 
             epochs = train_epochs, batch_size = batch_size, 
             validation_split = 0.2)
-
+    """
 
 
 
@@ -200,121 +210,78 @@ print(res_final_weights)
 
 
 
-
 ### Pruning
 # Train the network for a certain number of epochs.
+
+#print(f"Learning rate: {sess.run(optimizer._lr)}")
+#current_lr = optimizer._decayed_lr(tf.float32)
+#print(current_lr)
+
+test_preds = res_nn(X_test)
+loss = loss_fn(y_true=y_test, y_pred=test_preds)
+title = f"Trained ontology: Post training, Loss {loss}"
+
+draw_graph(
+        dG, root, term_size_map, 
+        title=title, draw_inputs=True, jitter=True)
+
+
+dG_copy = dG.copy()
 for prune_train_iter in range(0, prune_train_iterations):
+    
 
     print(f"Pruning/Training iteration: {prune_train_iter}")
-    # Retrain the model.
-    res_nn.fit(
-            X_train, y_train, 
-            epochs = 10, batch_size = batch_size, 
-            validation_split = 0.2)
 
     # Prune the model for a number of prunning epochs.
     prune(res_nn, X_train, y_train, 
-          lr=lr, lip=lip, regl0=regl0, reg_glasso=reg_glasso, 
-          prune_epochs = 10)
+          lr=lr, lip=lip, regl0=regl0, reg_glasso=reg_glasso,
+          inp_id_map=gene2id_mapping,
+          prune_epochs=10, debug=False)
 
-    # Check the network architecture.
-    check_network(res_nn, dG, root)
-
-
-
-raise
-
-
-
-
-
-
-
-
-"""
-    # Get the gradients of all trainable vars and store in a list.
-    with tf.GradientTape() as t:
-
-        # Pass the training data through and make predictions.
-        # Calculate the loss.
-        #train_preds, mod_output_map = res_nn(X_train, prune=True)
-        train_preds = res_nn(X_train, prune=False)
-        total_loss = loss_fn(train_preds, y_train)
-        
-
-        print(f"Epoch: {epoch}\t\t\t\tLoss: {total_loss}")
-        # Get the gradients for all trainable variables.
-        trainable_vars = res_nn.trainable_variables
-        grads = t.gradient(total_loss, trainable_vars)
-
-
-        # Delete the gradient tape.
-        del t
-
-    # Update the model parameters using PALM.
-    res_nn = train_with_palm(res_nn, trainable_vars, grads, lr, regl0, reg_glasso) 
-    #check_network(res_nn, dG, root)
-# Check network structure.
-check_network(res_nn, dG, root)
-
-
-res_history = res_nn.fit(
-        X_train, y_train, 
-        epochs = epochs, batch_size = batch_size, 
-        validation_split = 0.2)
-
-
-
-
-# Train the network for a certain number of epochs.
-for epoch in range(0, 8000):
+    # Retrain the model.
+    res_nn = train_network(res_nn, X_train, y_train, 
+                  train_epochs=2, loss_fn=loss_fn, optimizer=optimizer)
     
-    # Get the gradients of all trainable vars and store in a list.
-    with tf.GradientTape() as t:
+    # Check the network architecture
+    dG_copy2 = check_network(res_nn, dG_copy, root, inp_id_map = gene2id_mapping)
+    dG_prune = dG_copy2.subgraph(nx.shortest_path(dG_copy2.to_undirected(), root))
+    #if (dG_copy.number_of_nodes() != dG_prune.number_of_nodes() 
+    #        or dG_copy.number_of_edges() != dG_prune.number_of_edges()):
+    if dG_copy.number_of_edges() != dG_copy2.number_of_edges(): 
 
+
+        for var in optimizer.variables():
+            var.assign(tf.zeros_like(var))
+
+
+        print("Original graph has %d nodes and %d edges" % (dG.number_of_nodes(), dG.number_of_edges()))
+        print("Pruned graph has %d nodes and %d edges" % (dG_prune.number_of_nodes(), dG_prune.number_of_edges()))
+        #dG_copy = dG_copy2.copy()
         
-        # Pass the training data through and make predictions.
-        # Calculate the loss.
-        #train_preds, mod_output_map = res_nn(X_train, prune=True)
-        train_preds = res_nn(X_train, prune=False)
-        total_loss = loss_fn(train_preds, y_train)
+
+        # Retrain the model.
+        res_nn = train_network(res_nn, X_train, y_train, 
+                      train_epochs=10000, loss_fn=loss_fn, optimizer=optimizer)
         
-        total_loss = 0
-        for name, output in mod_output_map.items():
-            if name == root:
-                added_loss= loss_fn(output, y_train)
-                total_loss += added_loss
-                print(f"Loss added from {name}: {added_loss}")
+        test_preds = res_nn(X_test)
+        loss = loss_fn(y_true=y_test, y_pred=test_preds)
+        title = f"Trained ontology: Iteration {prune_train_iter}, Loss {loss}"
+        draw_graph(
+                dG_copy, root, term_size_map, 
+                title=title, draw_inputs=True, jitter=True)
+        draw_graph(
+                dG_prune, root, term_size_map, 
+                title=title, draw_inputs=True, jitter=True)
 
-
-            else: # change 0.2 to smaller one for big terms
-                added_loss = 0.2 * loss_fn(output, y_train)
-                total_loss += added_loss
-                print(f"Loss added from {name}: {added_loss}")
-
-        print(total_loss)
-
-
-        print(f"Epoch: {epoch}\t\t\t\tLoss: {total_loss}")
-        # Get the gradients for all trainable variables.
-        trainable_vars = res_nn.trainable_variables
-        grads = t.gradient(total_loss, trainable_vars)
-
-
-        # Delete the gradient tape.
-        del t
-
-    # Update the model parameters using PALM.
-    res_nn = train_with_palm(res_nn, trainable_vars, grads, lr, regl0, reg_glasso) 
-    #check_network(res_nn, dG, root)
-    
-
-# Check network structure.
-check_network(res_nn, dG, root)
-"""
+        dG_copy = dG_copy2.copy()
 
 
 
+
+
+res_final_weights = res_nn.get_weights()
+print("Final weights")
+print(res_final_weights)
 
 
 

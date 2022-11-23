@@ -1,0 +1,7 @@
+0   gene1
+1   gene2
+2   gene3
+3   gene4
+4   gene5
+5   gene6
+6   gene7

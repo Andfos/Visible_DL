@@ -4,9 +4,20 @@
 Set 3 aims to test whether an unimportant gene that is assigned to a module
 will have the weight connecting it to the module correctly go to 0. Gene1, 
 gene2, and gene3 are all considered a part of GO:01 initially, but the 
-function that generates the data is f(x) = x[1] + x[2]. Therefore, gene3
+function that generates the data is f(x1, x2). Therefore, gene3
 has no contribution to the output, and its weight connecting it to GO:01 
 should go to 0. 
+
+# Results
+- For function f(x) = x1 + x2, With 1 neuron in GO:01 and the output layer, 
+  using a tanh activation and bias for the module layer, the result is SUCCESS.
+
+
+- For function f(x) = x1 * x2, With 16 neuron in GO:01, 
+  using a tanh activation and bias for the module layer, the result is SUCCESS, 
+  although at first it seems that it wasn't working every single time.
+
+
 
 For model3, there is exactly 1 neuron in the GO:01 module layer, and 
 there are no bias weights in the network at all. 
